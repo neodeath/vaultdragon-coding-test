@@ -4,6 +4,6 @@ from coding_test.models import VDObject
 class VDObjectSerializer(serializers.ModelSerializer):
 	class Meta:
 		model = VDObject
-		fields = ('key','value')
+		fields = ('key','value','timestamp')
 
 

@@ -27,10 +27,13 @@ class VDObjectViewSet(viewsets.ModelViewSet):
 		#what happen if no changed?
 		data = {"value":obj.value}
 		str_data = json.dumps(data)
-		new_log = Log(updated=obj.updated, action = action, key = key_value, data = str_data)
+		new_log = Log(updated=obj.timestamp, action = action, key = key_value, data = str_data)
 		new_log.save();
-	def get_response(self, data):
-		return {data['key']:data['value']}
+	def get_response(self, data,timestamp):
+		#import pdb;
+		#pdb.set_trace();
+
+		return {data['key']:data['value'],'timestamp':str(int(timestamp))}
 
 	def retrieve(self, request, *args, **kwargs):
 		
@@ -45,7 +48,7 @@ class VDObjectViewSet(viewsets.ModelViewSet):
 				return Response({"detail":"invalid timestamp provided"}, status=status.HTTP_400_BAD_REQUEST)
 
 			
-			if datetime_timestamp < instance.updated:
+			if datetime_timestamp < instance.timestamp:
 				#means need to look at log
 				
 				log_results = Log.objects.all().filter(updated__lt=datetime_timestamp,key=kwargs['pk']).order_by('-updated')[:1]
@@ -58,28 +61,37 @@ class VDObjectViewSet(viewsets.ModelViewSet):
 
 	def create(self, request, *args, **kwargs):
 		
-		serializer = self.get_serializer(data=request.data)
+		try:
+			
+			k,v = request.data.popitem()
+			
+			request_data = {'key':k,'value':v}
+			
+		except:
+			return Response({"detail":"invalid input"}, status=status.HTTP_400_BAD_REQUEST)
+		serializer = self.get_serializer(data=request_data)
 		try:
 			serializer.is_valid(raise_exception=True)
-			self.perform_create(serializer)
+			obj = self.perform_create(serializer)
 			#create path
-			self.add_log('Create',request.data['key'])
+			self.add_log('Create',k)
 
+			ts = datetime.datetime.strptime(serializer.data["timestamp"], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()
 			headers = self.get_success_headers(serializer.data)
 
-			return Response(self.get_response(serializer.data), status=status.HTTP_201_CREATED, headers=headers)
+			return Response(self.get_response(serializer.data,ts), status=status.HTTP_201_CREATED, headers=headers)
 		except ValidationError as e:
 			if 'key' in e.detail and len(e.detail["key"]) == 1 and 'key already exist' in e.detail["key"][0]:			
-				obj = VDObject.objects.all().filter(key=request.data['key'])[0]
+				obj = VDObject.objects.all().filter(key=k)[0]
 				
 				#update path
-				if obj.value != request.data['value']:
-					obj.value = request.data['value']
+				if obj.value != v:
+					obj.value = v
 					obj.save()
 					
-					self.add_log('Update',request.data['key'])
+					self.add_log('Update',k)
 				
-				return Response(self.get_response(serializer.data))
+				return Response(self.get_response(obj.__dict__,obj.timestamp.timestamp()))
 			else:
 				raise e
 
